@@ -52,17 +52,18 @@ def get_repo_name():
 
 
 def create_module_name(repo_name):
+    
+
     """Convert repository name to valid Python module name."""
     # Replace dashes with underscores and ensure it's a valid Python identifier
+
     module_name = repo_name.replace('-', '_')
     
     # Ensure it starts with a letter or underscore
-    if not module_name[0].isalpha() and module_name[0] != '_':
-        module_name = '_' + module_name
-    
-    # Remove any invalid characters
-    module_name = re.sub(r'[^a-zA-Z0-9_]', '_', module_name)
-    
+    if not module_name[0].isalpha() and re.match(r'[^a-zA-Z0-9_]+', module_name):
+        print('Invalid module name:', module_name)
+        sys.exit(1)
+
     return module_name
 
 
@@ -88,7 +89,7 @@ def get_files_to_process():
     """Get list of files to process, excluding certain directories and file types."""
     exclude_dirs = {
         '.git', '.pixi', '__pycache__', '.pytest_cache', 
-        'node_modules', '.venv', 'venv', 'env',
+        'node_modules', '.venv', 'venv', 'env', '.scripts',
         'munch_group_template.egg-info'
     }
     exclude_extensions = {
@@ -152,9 +153,9 @@ def main():
     print(f"Repository name: {repo_name}")
     print(f"Module name: {module_name}")
     
-    if module_name == "munch_group_template":
-        print("Module name is already 'munch_group_template', no changes needed.")
-        return
+    # if module_name == "munch_group_template":
+    #     print("Module name is already 'munch_group_template', no changes needed.")
+    #     return
     
     # Get all files to process
     files_to_process = get_files_to_process()
@@ -165,13 +166,17 @@ def main():
     # Replace text in files
     files_changed = 0
     for file_path in files_to_process:
+        if find_and_replace_in_file(file_path, "munch-group-template", repo_name, args.dry_run):
+            files_changed += 1
+            status = "Would update" if args.dry_run else "✓"
+            print(f"  {status} {file_path}")
         if find_and_replace_in_file(file_path, "munch_group_template", module_name, args.dry_run):
             files_changed += 1
             status = "Would update" if args.dry_run else "✓"
             print(f"  {status} {file_path}")
-    
+
     result = "Would update" if args.dry_run else "Updated"
-    print(f"\n📁 {result} {files_changed} files")
+    print(f"\n{result} {files_changed} files")
     
     # Rename the source directory
     if rename_directory("munch_group_template", module_name, args.dry_run):
@@ -179,9 +184,9 @@ def main():
         print(f"{status} source directory")
     
     if args.dry_run:
-        print(f"\n🔍 Dry run complete! Run without --dry-run to apply changes.")
+        print(f"\nDry run complete! Run without --dry-run to apply changes.")
     else:
-        print(f"\n✅ Template initialization complete!")
+        print(f"\nTemplate initialization complete!")
         print(f"Your library is now configured as: {module_name}")
         print(f"\nNext steps:")
         print(f"1. Update the description in pyproject.toml")
