@@ -34,6 +34,7 @@ from typing import List, Dict, Any, Optional, Tuple
 from notion_client import Client
 from fuzzywuzzy import fuzz, process
 
+TODO_DATABASE_ID = '25ffd1e7c2e1800d9be9f8b38365b1c6'
 
 class NotionPageCreator:
     def __init__(self, token: str):
@@ -497,12 +498,13 @@ class NotionPageCreator:
         """Get page title and content from user while refreshing cache in background."""
         db_title = self.get_database_title(selected_database)
         db_context = self.get_database_context(selected_database)
-        print(f"\nCreating page in: {db_title} {db_context}")
+
+        print(f"New page in: {db_title} {db_context}")
         
         # Start background refresh when user starts inputting
         self.start_background_refresh()
         
-        title = input("Page title: ").strip()
+        title = input("Title: ").strip()
         if not title:
             print("ERROR: Title cannot be empty. Exiting.")
             return "", ""
@@ -669,7 +671,7 @@ def todo():
 
     token = get_token()
     creator = NotionPageCreator(token)
-    creator.run(database_id='25ffd1e7c2e1800d9be9f8b38365b1c6')
+    creator.run(database_id=TODO_DATABASE_ID)
 
 
 if __name__ == "__main__":

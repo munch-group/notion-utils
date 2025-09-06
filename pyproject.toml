@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "notion-utils"
-version = "0.1.1.rc1"
+version = "0.1.1"
 description = "Project description"
 authors = [
     {name = "Your Name", email = "your@email.com"}
@@ -19,6 +19,7 @@ classifiers = [
 dependencies = [
   "notion-client",
   "fuzzywuzzy",
+  "python-Levenshtein",
 ]
 
 [project.urls]
@@ -27,8 +28,8 @@ Repository = "https://github.com/munch-group/notion-utils"
 Documentation = "https://munch-group.org/notion-utils"
 
 [project.scripts]
-notion-page = "notion_utils.add_page_utils:main"
-task = "notion_utils.add_page_utils:todo"
+notion-page = "notion_utils.add_page:main"
+task = "notion_utils.add_page:todo"
 
 [tool.setuptools]
 include-package-data = true
@@ -46,6 +47,7 @@ platforms = ["osx-arm64", "win-64", "osx-64", "linux-64"]
 
 [tool.pixi.dependencies]
 python = ">=3.9"
+pip = ">=25.2,<26"
 
 # [tool.pixi.pypi-dependencies]
 # Optional PyPI dependencies can be added here
@@ -96,7 +98,7 @@ cmd = "./.scripts/template_init.py"
 description = "Initialize template by renaming project files"
 
 [tool.pixi.tasks.install-dev]
-cmd = "pip install -e ."
+cmd = "pixi shell -e dev && pip install -e ."
 #cmd = "pip install --no-build-isolation --no-deps --disable-pip-version-check -e ."
 description = "Install the package in development mode"
 
