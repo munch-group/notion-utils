@@ -1,0 +1,243 @@
+
+
+# Add api key to Keychain
+
+```sh
+security add-generic-password -a "$USER" -s anthropic_api_key -w
+```
+Then paste your new API key and press Enter
+
+
+# Automation Quick Action running AppleScript
+
+![alt text](<images/Screenshot 2025-09-15 at 11.53.13.png>)
+
+
+```txt
+#!/usr/bin/osascript
+-- Complete Email Draft Script with Calendar Integration
+-- Author: Kasper Munch
+-- Version: Final with calendar event creation
+
+on run
+	try
+		-- Get API key from Keychain
+		set apiKey to do shell script "security find-generic-password -a $USER -s anthropic_api_key -w 2>/dev/null"
+		
+		if apiKey is "" then
+			error "No API key found. Store it with: security add-generic-password -a $USER -s anthropic_api_key -w"
+		end if
+		
+		-- Get selected email from Mail
+		tell application "Mail"
+			set selectedMessages to selection
+			if (count of selectedMessages) = 0 then
+				error "Please select an email in Mail first"
+			end if
+			
+			set theMessage to item 1 of selectedMessages
+			set emailSender to sender of theMessage
+			set emailSubject to subject of theMessage
+			set emailContent to content of theMessage
+			
+			-- Get email address
+			set emailAddress to emailSender
+			if emailSender contains "<" then
+				set emailAddress to rich text ((offset of "<" in emailSender) + 1) thru ((offset of ">" in emailSender) - 1) of emailSender
+			end if
+		end tell
+		
+		-- STEP 1: Ask for response type
+		set responseTypes to {"Accept/Affirm", "Decline Politely", "Request Information", "Suggest Meeting", "Custom Instructions"}
+		set chosenType to choose from list responseTypes with prompt "Step 1: Select your response type" default items {"Accept/Affirm"} with title "Email Response Type"
+		
+		if chosenType is false then
+			error "No response type selected"
+		end if
+		
+		set responseType to item 1 of chosenType
+		
+		-- Set up response instructions based on type
+		if responseType is "Accept/Affirm" then
+			set responseInstructions to "Write an affirmative, positive response that accepts or agrees with their request. Express enthusiasm and confirm next steps. Be warm and professional."
+		else if responseType is "Decline Politely" then
+			set responseInstructions to "Write a polite, respectful decline. Thank them for their interest, explain briefly why you cannot accept (be vague if needed), and if possible suggest an alternative or wish them well. Maintain a positive tone."
+		else if responseType is "Request Information" then
+			set responseInstructions to "Write a response requesting more information or clarification. List specific questions or information you need. Express interest but indicate you need more details before proceeding."
+		else if responseType is "Suggest Meeting" then
+			set responseInstructions to "Write a response focused on scheduling a meeting to discuss further. Be enthusiastic about meeting."
+		else if responseType is "Custom Instructions" then
+			set customPrompt to display dialog "Step 3: Enter custom instructions:" default answer "" with title "Custom Instructions" buttons {"Cancel", "OK"} default button "OK" with icon note
+			if button returned of customPrompt is "Cancel" then error "Cancelled"
+			set responseInstructions to text returned of customPrompt
+			if responseInstructions is "" then
+				set responseInstructions to "Write a professional and appropriate response to this email."
+			end if
+		end if
+		
+		-- Prepare email content (take first 400 chars for context)
+		if (count of emailContent) > 400 then
+			set emailSnippet to text 1 thru 400 of emailContent & "..."
+		else
+			set emailSnippet to emailContent
+		end if
+		
+		-- Clean content for JSON
+		set emailSnippet to do shell script "echo " & quoted form of emailSnippet & " | tr -d '\\n\\r\\t\"' | sed 's/[^[:print:]]//g'"
+		set cleanSubject to do shell script "echo " & quoted form of emailSubject & " | tr -d '\\n\\r\\t\"'"
+		set cleanSender to do shell script "echo " & quoted form of emailSender & " | tr -d '\\n\\r\\t\"'"
+		set cleanInstructions to do shell script "echo " & quoted form of responseInstructions & " | tr -d '\\n\\r\\t\"' | sed 's/[^[:print:]]//g'"
+		
+		-- Create Python script for API call with structured response
+		set pythonScript to "
+import json
+import urllib.request
+import re
+
+api_key = '" & apiKey & "'
+prompt = '''You must respond with a JSON object containing two fields:
+1. \"email_draft\": The email response text
+2. \"suggested_meetings\": An array of meeting objects (only if meetings are mentioned in instructions)
+
+Each meeting object must have:
+- \"date\": Format as \"YYYY-MM-DD\" (e.g., \"2025-09-15\")
+- \"start_time\": Format as \"HH:MM\" in 24-hour format (e.g., \"14:00\" for 2:00 PM)
+- \"end_time\": Format as \"HH:MM\" in 24-hour format (assume 1 hour duration)
+- \"title\": Meeting title
+
+RESPONSE TYPE: " & responseType & "
+INSTRUCTIONS: " & cleanInstructions & "
+
+ORIGINAL EMAIL:
+From: " & cleanSender & "
+Subject: " & cleanSubject & "
+Content: " & emailSnippet & "
+
+IMPORTANT:
+- Return ONLY valid JSON
+- In the email_draft, write in the same language as the original email
+- If meeting slots are provided, select 2-3 most appropriate ones
+- Convert dates like \"Monday Sep 16\" to \"2025-09-16\" format
+- Convert times like \"10:00 AM\" to \"10:00\" and \"2:00 PM\" to \"14:00\"
+- Keep professional but warm tone
+- Sign with: Kasper Munch (or just Kasper for informal)
+- Use appropriate closing for the language
+
+Example response format:
+{
+  \"email_draft\": \"Your email text here...\",
+  \"suggested_meetings\": [
+    {\"date\": \"2025-09-15\", \"start_time\": \"10:00\", \"end_time\": \"11:00\", \"title\": \"Discussion meeting\"},
+    {\"date\": \"2025-09-16\", \"start_time\": \"14:00\", \"end_time\": \"15:00\", \"title\": \"Follow-up meeting\"}
+  ]
+}'''
+
+data = {
+    'model': 'claude-3-5-sonnet-20241022',
+    'max_tokens': 1000,
+    'temperature': 0.7,
+    'messages': [{'role': 'user', 'content': prompt}]
+}
+
+req = urllib.request.Request(
+    'https://api.anthropic.com/v1/messages',
+    data=json.dumps(data).encode('utf-8'),
+    headers={
+        'x-api-key': api_key,
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json'
+    }
+)
+
+try:
+    response = urllib.request.urlopen(req)
+    result = json.loads(response.read())
+    claude_response = result['content'][0]['text']
+    
+    # Parse the JSON response from Claude
+    response_data = json.loads(claude_response)
+    
+    # Output in a format AppleScript can parse
+    print('EMAIL_DRAFT_START')
+    print(response_data.get('email_draft', ''))
+    print('EMAIL_DRAFT_END')
+    
+    if 'suggested_meetings' in response_data and response_data['suggested_meetings']:
+        print('MEETINGS_START')
+        for meeting in response_data['suggested_meetings']:
+            print(f\"{meeting['date']}|{meeting['start_time']}|{meeting['end_time']}|{meeting['title']}\")
+        print('MEETINGS_END')
+        
+except Exception as e:
+    print(f'ERROR: {e}')
+"
+		
+		-- Execute Python script
+		display notification "Drafting response with Claude..." with title "Email Assistant"
+		set apiResponse to do shell script "python3 -c " & quoted form of pythonScript
+		
+		if apiResponse starts with "ERROR:" then
+			error apiResponse
+		end if
+		
+		-- Parse the response
+		set draftContent to ""
+		set meetingsList to {}
+		
+		-- Extract email draft
+		set draftStart to offset of "EMAIL_DRAFT_START" in apiResponse
+		set draftEnd to offset of "EMAIL_DRAFT_END" in apiResponse
+		if draftStart > 0 and draftEnd > 0 then
+			set draftContent to text (draftStart + 18) thru (draftEnd - 1) of apiResponse
+		end if
+		
+		-- Extract meetings if present
+		set meetingsStart to offset of "MEETINGS_START" in apiResponse
+		set meetingsEnd to offset of "MEETINGS_END" in apiResponse
+		
+		if meetingsStart > 0 and meetingsEnd > 0 then
+			set meetingsText to text (meetingsStart + 15) thru (meetingsEnd - 1) of apiResponse
+			set oldDelimiters to AppleScript's text item delimiters
+			set AppleScript's text item delimiters to return
+			set meetingLines to text items of meetingsText
+			
+			repeat with meetingLine in meetingLines
+				if meetingLine is not "" then
+					set AppleScript's text item delimiters to "|"
+					set meetingParts to text items of meetingLine
+					if (count of meetingParts) = 4 then
+						set end of meetingsList to {dateStr:item 1 of meetingParts, startTime:item 2 of meetingParts, endTime:item 3 of meetingParts, title:item 4 of meetingParts}
+					end if
+				end if
+			end repeat
+			set AppleScript's text item delimiters to oldDelimiters
+		end if
+		
+		-- Create draft in Mail
+		tell application "Mail"
+			set newMessage to make new outgoing message with properties {visible:true}
+			
+			tell newMessage
+				make new to recipient at end of to recipients with properties {address:emailAddress}
+				set subject to "Re: " & emailSubject
+				set content to draftContent
+			end tell
+			
+			activate
+		end tell
+		
+		display notification "Draft created successfully!" with title "Email Assistant" sound name "Glass"
+		
+	on error errMsg
+		if errMsg is not "No response type selected" and errMsg is not "Cancelled" then
+			display alert "Error" message errMsg buttons {"OK"} default button "OK"
+		end if
+	end try
+end run
+
+
+```
+
+# Add keyboard shortcut
+
+![alt text](<images/Screenshot 2025-09-15 at 12.29.46.png>)
