@@ -1,0 +1,7 @@
+{
+  "apiKey": "",
+  "cleanInstructions": "Please draft a brief response",
+  "cleanSender": "test@example.com",
+  "cleanSubject": "Test Email",
+  "emailSnippet": "This is a test email to check if the script works correctly with the new error handling."
+}

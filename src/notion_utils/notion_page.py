@@ -1,27 +1,3 @@
-"""
-Notion Database Page Creator with Comprehensive Search
-
-This script allows you to:
-1. Search across ALL accessible databases (private + workspace content)
-2. Add a new page to the selected database with title and content
-3. Background cache refresh for improved performance
-4. Workspace context awareness
-5. Direct database access via database ID (bypasses search)
-
-Requirements:
-- pip install notion-client fuzzywuzzy python-levenshtein
-
-Setup:
-1. Create a Notion integration at https://www.notion.so/my-integrations
-2. Copy the integration token
-3. Share your databases with the integration (both private and workspace)
-4. Set the NOTION_TOKEN environment variable or modify the script
-
-Usage:
-- Interactive mode: python notion_page_creator.py
-- Direct mode: python notion_page_creator.py --database-id YOUR_DATABASE_ID
-"""
-
 import os
 import sys
 import json
@@ -33,7 +9,6 @@ from typing import List, Dict, Any, Optional, Tuple
 from notion_client import Client
 from fuzzywuzzy import fuzz, process
 
-TODO_DATABASE_ID = '25ffd1e7c2e1800d9be9f8b38365b1c6'
 
 class NotionPageCreator:
     def __init__(self, token: str):
@@ -65,23 +40,23 @@ class NotionPageCreator:
             return workspace_info
             
         except Exception as e:
-            print(f"WARNING: Could not get workspace info: {e}")
+            print(f"WARNING: Could not get workspace info: {e}", file=sys.stderr)
             return {'error': str(e)}
 
     def display_workspace_context(self) -> None:
         """Display current workspace context and access information."""
-        # print("Workspace Context")
-        # print("-" * 30)
+        # print("Workspace Context", file=sys.stderr)
+        # print("-" * 30, file=sys.stderr)
         
         self.workspace_info = self.get_workspace_info()
         
         # if 'error' not in self.workspace_info:
-        #     print(f"Integration: {self.workspace_info.get('bot_name', 'Unknown')}")
-        #     print(f"Access Type: {self.workspace_info.get('bot_type', 'Unknown')}")
-        #     print(f"Workspace Access: {'Yes' if self.workspace_info.get('workspace_accessible') else 'Limited'}")
+        #     print(f"Integration: {self.workspace_info.get('bot_name', 'Unknown')}", file=sys.stderr)
+        #     print(f"Access Type: {self.workspace_info.get('bot_type', 'Unknown')}", file=sys.stderr)
+        #     print(f"Workspace Access: {'Yes' if self.workspace_info.get('workspace_accessible') else 'Limited'}", file=sys.stderr)
         # else:
-        #     print(f"WARNING: Limited workspace info: {self.workspace_info['error']}")        
-        # print()
+        #     print(f"WARNING: Limited workspace info: {self.workspace_info['error']}", file=sys.stderr)        
+        # print(, file=sys.stderr)
 
     def validate_database_id(self, database_id: str) -> Optional[Dict[str, Any]]:
         """
@@ -96,18 +71,18 @@ class NotionPageCreator:
             database = self.notion.databases.retrieve(database_id=clean_id)
             
             if database and database.get('object') == 'database':
-                # print(f"SUCCESS: Found database '{self.get_database_title(database)}'")
+                # print(f"SUCCESS: Found database '{self.get_database_title(database)}'", file=sys.stderr)
                 return database
             else:
-                print(f"ERROR: Invalid database response for ID: {database_id}")
+                print(f"ERROR: Invalid database response for ID: {database_id}", file=sys.stderr)
                 return None
                 
         except Exception as e:
-            print(f"ERROR: Could not access database with ID '{database_id}': {e}")
-            print("HELP: Check that:")
-            print("  1. The database ID is correct")
-            print("  2. The database is shared with your integration")
-            print("  3. You have read access to the database")
+            print(f"ERROR: Could not access database with ID '{database_id}': {e}", file=sys.stderr)
+            print("HELP: Check that:", file=sys.stderr)
+            print("  1. The database ID is correct", file=sys.stderr)
+            print("  2. The database is shared with your integration", file=sys.stderr)
+            print("  3. You have read access to the database", file=sys.stderr)
             return None
 
     def load_cache(self) -> bool:
@@ -119,7 +94,7 @@ class NotionPageCreator:
             # Check if cache is recent enough
             cache_age = time.time() - self.cache_file.stat().st_mtime
             if cache_age > self.cache_max_age:
-                print("Cache is outdated, will refresh...")
+                print("Cache is outdated, will refresh...", file=sys.stderr)
                 return False
             
             with open(self.cache_file, 'r', encoding='utf-8') as f:
@@ -131,18 +106,18 @@ class NotionPageCreator:
             
             if self.databases and cache_time:
                 age_minutes = int(cache_age / 60)
-                # print(f"Loaded {len(self.databases)} database(s) from cache ({age_minutes}m old)")
+                # print(f"Loaded {len(self.databases)} database(s) from cache ({age_minutes}m old)", file=sys.stderr)
                 
                 if workspace_cache:
                     workspace_cache.get('bot_name', 'Unknown')
-                    # print(f"Cached workspace: {workspace_cache.get('bot_name', 'Unknown')}")
+                    # print(f"Cached workspace: {workspace_cache.get('bot_name', 'Unknown')}", file=sys.stderr)
                 
                 return True
             
             return False
             
         except (json.JSONDecodeError, KeyError, IOError) as e:
-            print(f"WARNING: Cache error (will refresh): {e}")
+            print(f"WARNING: Cache error (will refresh): {e}", file=sys.stderr)
             return False
 
     def save_cache(self, databases: List[Dict[str, Any]]) -> None:
@@ -157,10 +132,10 @@ class NotionPageCreator:
             with open(self.cache_file, 'w', encoding='utf-8') as f:
                 json.dump(cache_data, f, indent=2)
             
-            print(f"Cache saved with {len(databases)} database(s)")
+            print(f"Cache saved with {len(databases)} database(s)", file=sys.stderr)
             
         except IOError as e:
-            print(f"WARNING: Could not save cache: {e}")
+            print(f"WARNING: Could not save cache: {e}", file=sys.stderr)
 
     def fetch_databases_comprehensive(self, silent: bool = False) -> List[Dict[str, Any]]:
         """
@@ -168,14 +143,14 @@ class NotionPageCreator:
         Uses multiple search strategies to ensure comprehensive coverage.
         """
         if not silent:
-            print("Searching ALL accessible content (private + workspace)...")
+            print("Searching ALL accessible content (private + workspace)...", file=sys.stderr)
         
         all_databases = []
         
         try:
             # Strategy 1: Direct database search (most comprehensive)
             if not silent:
-                print("  Searching databases...")
+                print("  Searching databases...", file=sys.stderr)
             
             response = self.notion.search(
                 filter={"property": "object", "value": "database"},
@@ -187,7 +162,7 @@ class NotionPageCreator:
             # Strategy 2: Paginate through all results if there are more
             while response.get("has_more", False):
                 if not silent:
-                    print(f"  Loading more results... (found {len(all_databases)} so far)")
+                    print(f"  Loading more results... (found {len(all_databases)} so far)", file=sys.stderr)
                 
                 response = self.notion.search(
                     filter={"property": "object", "value": "database"},
@@ -199,7 +174,7 @@ class NotionPageCreator:
             # Strategy 3: General search to catch any missed databases
             # Sometimes databases might not be caught by the filtered search
             if not silent:
-                print("  Performing general search verification...")
+                print("  Performing general search verification...", file=sys.stderr)
             
             general_response = self.notion.search(page_size=100)
             
@@ -215,7 +190,7 @@ class NotionPageCreator:
                 if db.get("id") not in existing_ids:
                     all_databases.append(db)
                     if not silent:
-                        print(f"  Found additional database: {self.get_database_title(db)}")
+                        print(f"  Found additional database: {self.get_database_title(db)}", file=sys.stderr)
             
             # Remove duplicates and sort
             unique_databases = []
@@ -231,7 +206,7 @@ class NotionPageCreator:
             unique_databases.sort(key=lambda x: self.get_database_title(x).lower())
             
             if not silent:
-                print(f"Found {len(unique_databases)} total database(s)")
+                print(f"Found {len(unique_databases)} total database(s)", file=sys.stderr)
                 
                 # Show breakdown by access type
                 private_count = 0
@@ -247,15 +222,15 @@ class NotionPageCreator:
                         private_count += 1
                 
                 if private_count > 0 or shared_count > 0:
-                    print(f"  Breakdown: {shared_count} workspace, {private_count} private/page-based")
+                    print(f"  Breakdown: {shared_count} workspace, {private_count} private/page-based", file=sys.stderr)
             
             if not unique_databases:
                 if not silent:
-                    print("ERROR: No databases found!")
-                    print("HELP: Make sure you've shared databases with your integration:")
-                    print("   1. Open each database in Notion")
-                    print("   2. Click 'Share' -> 'Invite'")
-                    print("   3. Add your integration")
+                    print("ERROR: No databases found!", file=sys.stderr)
+                    print("HELP: Make sure you've shared databases with your integration:", file=sys.stderr)
+                    print("   1. Open each database in Notion", file=sys.stderr)
+                    print("   2. Click 'Share' -> 'Invite'", file=sys.stderr)
+                    print("   3. Add your integration", file=sys.stderr)
                 return []
             
             # Save to cache
@@ -265,8 +240,8 @@ class NotionPageCreator:
             
         except Exception as e:
             if not silent:
-                print(f"ERROR: Error fetching databases: {e}")
-                print("HELP: Check your integration token and database permissions")
+                print(f"ERROR: Error fetching databases: {e}", file=sys.stderr)
+                print("HELP: Check your integration token and database permissions", file=sys.stderr)
             return []
 
     def refresh_cache_background(self) -> None:
@@ -277,15 +252,15 @@ class NotionPageCreator:
         def refresh_worker():
             self._refresh_in_progress = True
             try:
-                print("Refreshing database cache in background...")
+                print("Refreshing database cache in background...", file=sys.stderr)
                 fresh_databases = self.fetch_databases_comprehensive(silent=True)
                 if fresh_databases:
                     self.databases = fresh_databases
-                    print("Background cache refresh completed")
+                    print("Background cache refresh completed", file=sys.stderr)
                 else:
-                    print("WARNING: Background cache refresh failed")
+                    print("WARNING: Background cache refresh failed", file=sys.stderr)
             except Exception as e:
-                print(f"WARNING: Background refresh error: {e}")
+                print(f"WARNING: Background refresh error: {e}", file=sys.stderr)
             finally:
                 self._refresh_in_progress = False
         
@@ -361,17 +336,17 @@ class NotionPageCreator:
     def display_search_results(self, results: List[Tuple[Dict[str, Any], int]]) -> Optional[Dict[str, Any]]:
         """Display search results and let user select a database."""
         if not results:
-            print("ERROR: No databases found matching your search term.")
-            print("HELP: Try different keywords or check if databases are shared with your integration")
+            print("ERROR: No databases found matching your search term.", file=sys.stderr)
+            print("HELP: Try different keywords or check if databases are shared with your integration", file=sys.stderr)
             return None
         
-        print(f"\nSearch Results ({len(results)} found):")
-        print("-" * 60)
+        print(f"\nSearch Results ({len(results)} found):", file=sys.stderr)
+        print("-" * 60, file=sys.stderr)
         
         for i, (database, score) in enumerate(results, 1):
             title = self.get_database_title(database)
             context = self.get_database_context(database)
-            print(f"{i:2d}. {title} {context} (Match: {score}%)")
+            print(f"{i:2d}. {title} {context} (Match: {score}%)", file=sys.stderr)
         
         # Let user select
         while True:
@@ -384,13 +359,13 @@ class NotionPageCreator:
                 index = int(choice) - 1
                 if 0 <= index < len(results):
                     selected_db = results[index][0]
-                    print(f"Selected: {self.get_database_title(selected_db)}")
+                    print(f"Selected: {self.get_database_title(selected_db)}", file=sys.stderr)
                     return selected_db
                 else:
-                    print(f"ERROR: Please enter a number between 1 and {len(results)}")
+                    print(f"ERROR: Please enter a number between 1 and {len(results)}", file=sys.stderr)
                     
             except ValueError:
-                print("ERROR: Please enter a valid number or 'q' to quit")
+                print("ERROR: Please enter a valid number or 'q' to quit", file=sys.stderr)
 
     def get_database_properties(self, database: Dict[str, Any]) -> Dict[str, Any]:
         """Get the properties schema of a database."""
@@ -481,16 +456,17 @@ class NotionPageCreator:
             db_title = self.get_database_title(database)
             db_context = self.get_database_context(database)
             
-            # print(f"\nPage created successfully!")
-            # print(f"Title: {title}")
-            # print(f"Database: {db_title} {db_context}")
-            print(f"New page created at: {page_url}")
+            # print(f"\nPage created successfully!", file=sys.stderr)
+            # print(f"Title: {title}", file=sys.stderr)
+            # print(f"Database: {db_title} {db_context}", file=sys.stderr)
+
+            print(f"New page created at: {page_url}", file=sys.stderr)
             
             return True
             
         except Exception as e:
-            print(f"\nERROR: Error creating page: {e}")
-            print("HELP: Check if the integration has write access to this database")
+            print(f"\nERROR: Error creating page: {e}", file=sys.stderr)
+            print("HELP: Check if the integration has write access to this database", file=sys.stderr)
             return False
 
     def get_user_input_with_background_refresh(self, selected_database: Dict[str, Any]) -> Tuple[str, str]:
@@ -498,21 +474,21 @@ class NotionPageCreator:
         db_title = self.get_database_title(selected_database)
         db_context = self.get_database_context(selected_database)
 
-        print(f"New page in: {db_title} {db_context}")
+        print(f"New page in: {db_title} {db_context}", file=sys.stderr)
         
         # Start background refresh when user starts inputting
         self.start_background_refresh()
         
         title = input("Title: ").strip()
         if not title:
-            print("ERROR: Title cannot be empty. Exiting.")
+            print("ERROR: Title cannot be empty. Exiting.", file=sys.stderr)
             return "", ""
         
-        print("Multi-line page content (Ctrl+D when done):")
+        print("Multi-line page content (Ctrl+D when done):", file=sys.stderr)
 
-        # print("Enter page content (press Ctrl+D on Unix/Ctrl+Z on Windows when done):")
-        # print("HELP: You can use multiple paragraphs - separate them with blank lines")
-        # print("INFO: Cache will be refreshed in background while you type...")
+        # print("Enter page content (press Ctrl+D on Unix/Ctrl+Z on Windows when done):", file=sys.stderr)
+        # print("HELP: You can use multiple paragraphs - separate them with blank lines", file=sys.stderr)
+        # print("INFO: Cache will be refreshed in background while you type...", file=sys.stderr)
         
         try:
             content_lines = []
@@ -526,13 +502,13 @@ class NotionPageCreator:
             
             # Wait for background refresh to complete if it's running
             if self._refresh_thread and self._refresh_thread.is_alive():
-                print("\nWaiting for cache refresh to complete...")
+                print("\nWaiting for cache refresh to complete...", file=sys.stderr)
                 self._refresh_thread.join(timeout=5)  # Wait max 5 seconds
             
             return title, content
             
         except KeyboardInterrupt:
-            print("\nERROR: Operation cancelled.")
+            print("\nERROR: Operation cancelled.", file=sys.stderr)
             return "", ""
 
     def initialize_databases(self) -> bool:
@@ -547,8 +523,8 @@ class NotionPageCreator:
 
     def run(self, database_id: Optional[str] = None):
         """Main execution flow."""
-        # print("Notion Database Page Creator (Private + Workspace Search)")
-        # print("=" * 65)
+        # print("Notion Database Page Creator (Private + Workspace Search)", file=sys.stderr)
+        # print("=" * 65, file=sys.stderr)
         
         # Show workspace context
         self.display_workspace_context()
@@ -557,18 +533,18 @@ class NotionPageCreator:
         
         # If database_id is provided, validate and use it directly
         if database_id:
-            # print(f"Using provided database ID: {database_id}")
+            # print(f"Using provided database ID: {database_id}", file=sys.stderr)
             selected_database = self.validate_database_id(database_id)
             
             if not selected_database:
-                print("ERROR: Failed to access provided database ID. Falling back to search.")
+                print("ERROR: Failed to access provided database ID. Falling back to search.", file=sys.stderr)
                 # Continue to search flow below
         
         # Search for database if no valid database_id was provided
         if not selected_database:
             # Initialize databases (cache or fresh fetch)
             if not self.initialize_databases():
-                print("ERROR: No accessible databases found. Please check your integration setup.")
+                print("ERROR: No accessible databases found. Please check your integration setup.", file=sys.stderr)
                 return
             
             # Search for database
@@ -576,11 +552,11 @@ class NotionPageCreator:
                 search_term = input("\nEnter search terms to find a database (or 'quit' to exit): ").strip()
                 
                 if search_term.lower() in ['quit', 'q', 'exit']:
-                    print("Goodbye!")
+                    print("Goodbye!", file=sys.stderr)
                     return
                 
                 if not search_term:
-                    print("ERROR: Please enter a search term.")
+                    print("ERROR: Please enter a search term.", file=sys.stderr)
                     continue
                 
                 # Perform search
@@ -593,7 +569,7 @@ class NotionPageCreator:
                 # Ask if they want to search again
                 again = input("\nWould you like to search again? (y/n): ").strip().lower()
                 if again not in ['y', 'yes']:
-                    print("Goodbye!")
+                    print("Goodbye!", file=sys.stderr)
                     return
         
         # Get page details with background refresh
@@ -603,5 +579,5 @@ class NotionPageCreator:
             return
         
         # Create the page
-        # print("\nCreating page...")
+        # print("\nCreating page...", file=sys.stderr)
         self.create_page(selected_database, title, content)

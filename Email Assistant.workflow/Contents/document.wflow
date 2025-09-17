@@ -1,0 +1,159 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>AMApplicationBuild</key>
+	<string>528</string>
+	<key>AMApplicationVersion</key>
+	<string>2.10</string>
+	<key>AMDocumentVersion</key>
+	<string>2</string>
+	<key>actions</key>
+	<array>
+		<dict>
+			<key>action</key>
+			<dict>
+				<key>AMAccepts</key>
+				<dict>
+					<key>Container</key>
+					<string>List</string>
+					<key>Optional</key>
+					<true/>
+					<key>Types</key>
+					<array>
+						<string>com.apple.applescript.object</string>
+					</array>
+				</dict>
+				<key>AMActionVersion</key>
+				<string>1.0.2</string>
+				<key>AMApplication</key>
+				<array>
+					<string>Automator</string>
+				</array>
+				<key>AMParameterProperties</key>
+				<dict>
+					<key>source</key>
+					<dict/>
+				</dict>
+				<key>AMProvides</key>
+				<dict>
+					<key>Container</key>
+					<string>List</string>
+					<key>Types</key>
+					<array>
+						<string>com.apple.applescript.object</string>
+					</array>
+				</dict>
+				<key>ActionBundlePath</key>
+				<string>/System/Library/Automator/Run AppleScript.action</string>
+				<key>ActionName</key>
+				<string>Run AppleScript</string>
+				<key>ActionParameters</key>
+				<dict>
+					<key>source</key>
+					<string>#!/usr/bin/osascript-- Complete Email Draft Script with Calendar Integration-- Author: Kasper Munch-- Version: Final with calendar event creationon isWhitespaceOnly(str)	if str = "" then return true	set trimmed to do shell script "echo " &amp; quoted form of str &amp; " | sed 's/[[:space:]]//g'"	-- set trimmed to do shell script "echo " &amp; quoted form of str &amp; " | xargs"	return trimmed = ""end isWhitespaceOnly-- Simple one-liner to get a field from base64 encoded JSONon getFieldFromBase64JSON(encodedStr, fieldName)	return do shell script "echo " &amp; quoted form of encodedStr &amp; ¬		" | base64 -d" &amp; ¬		" | python3 -c 'import sys, json; print(json.loads(sys.stdin.read()).get(\"" &amp; fieldName &amp; "\", \"\"))'"end getFieldFromBase64JSONon run	try		-- Get API key from Keychain		set apiKey to do shell script "security find-generic-password -a $USER -s anthropic_api_key -w 2&gt;/dev/null"				if apiKey is "" then			error "No API key found. Store it with: security add-generic-password -a $USER -s anthropic_api_key -w"		end if				-- Get selected email from Mail		tell application "Mail"			set selectedMessages to selection			if (count of selectedMessages) = 0 then				error "Please select an email in Mail first"			end if						set theMessage to item 1 of selectedMessages			set emailSender to sender of theMessage			set emailSubject to subject of theMessage			set emailContent to content of theMessage			set messageID to message id of theMessage						-- Get email address			set emailAddress to emailSender			if emailSender contains "&lt;" then				set emailAddress to rich text ((offset of "&lt;" in emailSender) + 1) thru ((offset of "&gt;" in emailSender) - 1) of emailSender			end if		end tell				-- STEP 1: Ask for response type		set responseTypes to {"Accept/Affirm", "Decline Politely", "Request Information", "Suggest Meeting", "Custom Instructions"}		set chosenType to choose from list responseTypes with prompt "Step 1: Select your response type" default items {"Accept/Affirm"} with title "Email Response Type"				if chosenType is false then			error "No response type selected"		end if				set responseType to item 1 of chosenType				-- Set up response instructions based on type		if responseType is "Accept/Affirm" then			set responseInstructions to "Write an affirmative, positive response that accepts or agrees with their request. Be brief but express enthusiasm and confirm next steps."					else if responseType is "Decline Politely" then			set responseInstructions to "Write a polite, respectful decline. Thank them for their interest, explain briefly why you cannot accept (be vague if needed), and if possible suggest an alternative or wish them well. Maintain a positive tone."					else if responseType is "Request Information" then			set responseInstructions to "Write a response requesting more information or clarification. Be brief, but list specific questions or information you need. Express interest but indicate you need more details before proceeding."					else if responseType is "Suggest Meeting" then			set responseInstructions to "Write a response focused on scheduling a meeting to discuss further. Be enthusiastic about meeting."					else if responseType is "Custom Instructions" then			set customPrompt to display dialog "Step 3: Enter custom instructions:" default answer "" with title "Custom Instructions" buttons {"Cancel", "OK"} default button "OK" with icon note			if button returned of customPrompt is "Cancel" then error "Cancelled"			set responseInstructions to text returned of customPrompt			if responseInstructions is "" then				set responseInstructions to "Write a professional and appropriate response to this email."			end if		end if				-- Truncate giant emails, just in case		if (count of emailContent) &gt; 5000 then			set emailSnippet to text 1 thru 5000 of emailContent &amp; "..."		else			set emailSnippet to emailContent		end if				-- Clean content for JSON		set emailSnippet to do shell script "echo " &amp; quoted form of emailSnippet &amp; " | tr -d '\\n\\r\\t\"' | sed 's/[^[:print:]]//g'"		set cleanSubject to do shell script "echo " &amp; quoted form of emailSubject &amp; " | tr -d '\\n\\r\\t\"'"		set cleanSender to do shell script "echo " &amp; quoted form of emailSender &amp; " | tr -d '\\n\\r\\t\"'"		set cleanInstructions to do shell script "echo " &amp; quoted form of responseInstructions &amp; " | tr -d '\\n\\r\\t\"' | sed 's/[^[:print:]]//g'"				-- set base64emailSnippet to do shell script "base64 -i " &amp; quoted form of POSIX path of contentFile				-- Build JSON more safely		set jsonData to "{" &amp; ¬			"\"apiKey\":\"" &amp; apiKey &amp; "\"," &amp; ¬			"\"messageID\":\"" &amp; messageID &amp; "\"," &amp; ¬			"\"emailSnippet\":\"" &amp; emailSnippet &amp; "\"," &amp; ¬			"\"cleanSubject\":\"" &amp; cleanSubject &amp; "\"," &amp; ¬			"\"cleanSender\":\"" &amp; cleanSender &amp; "\"," &amp; ¬			"\"cleanInstructions\":\"" &amp; cleanInstructions &amp; "\"" &amp; ¬			"}"				-- Write to temp file		set tempFile to (path to temporary items folder as string) &amp; "email_data.json"		-- set tempFile to "/Users/kmt/notion-utils/src/notion_utils/email_data.json"				set fileRef to open for access file tempFile with write permission		set eof fileRef to 0		write jsonData to fileRef as «class utf8»		close access fileRef				-- Call Python script		set tempFilePOSIX to POSIX path of tempFile		set apiResponse to do shell script "/Users/kmt/.pixi/bin/python3 /Users/kmt/notion-utils/src/notion_utils/email_assistant.py " &amp; quoted form of tempFilePOSIX				-- Clean up		do shell script "rm " &amp; quoted form of tempFilePOSIX				if apiResponse starts with "ERROR:" then			error apiResponse		end if				-- Parse the response		set draftContent to ""		set meetingsList to {}				set draftContent to getFieldFromBase64JSON(apiResponse, "email_draft")				if isWhitespaceOnly(draftContent) then			display notification "No reply required" with title "Email Assistant" sound name "Glass"		end if				-- Create draft in Mail		tell application "Mail"			set newMessage to make new outgoing message with properties {visible:true}						tell newMessage				make new to recipient at end of to recipients with properties {address:emailAddress}				set subject to "Re: " &amp; emailSubject				set content to draftContent			end tell						activate		end tell				-- display notification "Draft created successfully!" with title "Email Assistant" sound name "Glass"				-- set taskList to getFieldFromBase64JSON(apiResponse, "tasks")		-- repeat with i from 1 to count of taskList		-- 	set thisTask to item i of taskList		-- 	-- set thisTitle to getFieldFromBase64JSON(thisTask, "title")		-- 	display notification thisTask with title "Task " &amp; i sound name "Glass"		-- end repeat				-- display notification getFieldFromBase64JSON(apiResponse, "tasks") with title "Task added" sound name "Glass"					on error errMsg		if errMsg is not "No response type selected" and errMsg is not "Cancelled" then			display alert "Error" message errMsg buttons {"OK"} default button "OK"		end if	end tryend run</string>
+				</dict>
+				<key>BundleIdentifier</key>
+				<string>com.apple.Automator.RunScript</string>
+				<key>CFBundleVersion</key>
+				<string>1.0.2</string>
+				<key>CanShowSelectedItemsWhenRun</key>
+				<false/>
+				<key>CanShowWhenRun</key>
+				<true/>
+				<key>Category</key>
+				<array>
+					<string>AMCategoryUtilities</string>
+				</array>
+				<key>Class Name</key>
+				<string>RunScriptAction</string>
+				<key>InputUUID</key>
+				<string>45F61BFB-386E-4784-B0A0-319424105FD5</string>
+				<key>Keywords</key>
+				<array>
+					<string>Run</string>
+				</array>
+				<key>OutputUUID</key>
+				<string>FA02D887-12BD-4A26-8D41-F73A8051AD63</string>
+				<key>UUID</key>
+				<string>F5990ED5-5036-4C1B-8558-9379D9ED8350</string>
+				<key>UnlocalizedApplications</key>
+				<array>
+					<string>Automator</string>
+				</array>
+				<key>arguments</key>
+				<dict>
+					<key>0</key>
+					<dict>
+						<key>default value</key>
+						<string>on run {input, parameters}
+	
+	(* Your script goes here *)
+	
+	return input
+end run</string>
+						<key>name</key>
+						<string>source</string>
+						<key>required</key>
+						<string>0</string>
+						<key>type</key>
+						<string>0</string>
+						<key>uuid</key>
+						<string>0</string>
+					</dict>
+				</dict>
+				<key>isViewVisible</key>
+				<integer>1</integer>
+				<key>location</key>
+				<string>299.000000:368.000000</string>
+				<key>nibPath</key>
+				<string>/System/Library/Automator/Run AppleScript.action/Contents/Resources/Base.lproj/main.nib</string>
+			</dict>
+			<key>isViewVisible</key>
+			<integer>1</integer>
+		</dict>
+	</array>
+	<key>connectors</key>
+	<dict/>
+	<key>workflowMetaData</key>
+	<dict>
+		<key>applicationBundleID</key>
+		<string>com.apple.mail</string>
+		<key>applicationBundleIDsByPath</key>
+		<dict>
+			<key>/System/Applications/Mail.app</key>
+			<string>com.apple.mail</string>
+		</dict>
+		<key>applicationPath</key>
+		<string>/System/Applications/Mail.app</string>
+		<key>applicationPaths</key>
+		<array>
+			<string>/System/Applications/Mail.app</string>
+		</array>
+		<key>inputTypeIdentifier</key>
+		<string>com.apple.Automator.nothing</string>
+		<key>outputTypeIdentifier</key>
+		<string>com.apple.Automator.nothing</string>
+		<key>presentationMode</key>
+		<integer>11</integer>
+		<key>processesInput</key>
+		<false/>
+		<key>serviceApplicationBundleID</key>
+		<string>com.apple.mail</string>
+		<key>serviceApplicationPath</key>
+		<string>/System/Applications/Mail.app</string>
+		<key>serviceInputTypeIdentifier</key>
+		<string>com.apple.Automator.nothing</string>
+		<key>serviceOutputTypeIdentifier</key>
+		<string>com.apple.Automator.nothing</string>
+		<key>serviceProcessesInput</key>
+		<false/>
+		<key>systemImageName</key>
+		<string>NSActionTemplate</string>
+		<key>useAutomaticInputType</key>
+		<false/>
+		<key>workflowTypeIdentifier</key>
+		<string>com.apple.Automator.servicesMenu</string>
+	</dict>
+</dict>
+</plist>
