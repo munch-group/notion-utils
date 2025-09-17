@@ -44,6 +44,8 @@ exclude = ["test*"]
 [tool.setuptools.package-data]
 notion_utils = ["data/*.txt", "data/*.csv", "data/*.pickle", "data/*.h5"]
 
+### Pixi Workspace ############################################################
+
 [tool.pixi.workspace]
 channels = ["conda-forge", "munch-group"]
 platforms = ["osx-arm64", "osx-64", "linux-64"]
@@ -82,6 +84,7 @@ seaborn = "*"
 pytables = "*"
 pip = "*"
 
+### Pixi Tasks ################################################################
 
 [tool.pixi.tasks.init-project]
 cmd = "./scripts/template_init.py && ./.scripts/init-project.sh -y"
@@ -119,11 +122,6 @@ description = "Removes untracked files and directories but respects your .gitign
 cmd = "python -m unittest"
 description = "Run tests"
 
- 
-
-# setup-kernel = "python -m ipykernel install --user --name franklin --display-name 'Franklin Python'"
-# quarto-render = { cmd = "quarto render", env = { QUARTO_PYTHON = ".pixi/envs/default/bin/python" } }
-
 [tool.pixi.tasks.bump-version]
 args = [
   { "arg" = "kind", "default" = "patch" },  # can be patch, minor, major
@@ -138,7 +136,7 @@ description = "Bump version patch and build/release conda packages"
 
 [tool.pixi.tasks.acp]
 args = [
-  { "arg" = "message", "default" = "update" },  # can be --patch, --minor, --major
+  { "arg" = "message", "default" = "update" }, 
 ]
 cmd = "git add -u ; git commit -m '{{ message }}' ; git push"
 description = "git add commit push of tracked files with optional message"
@@ -147,3 +145,5 @@ description = "git add commit push of tracked files with optional message"
 cmd = "./.scripts/release-tag.sh"
 description = "Release latest version on Github"
 
+# setup-kernel = "python -m ipykernel install --user --name franklin --display-name 'Franklin Python'"
+# quarto-render = { cmd = "quarto render", env = { QUARTO_PYTHON = ".pixi/envs/default/bin/python" } }

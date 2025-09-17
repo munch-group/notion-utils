@@ -46,6 +46,75 @@ def safe_notify(title, message, subtitle="", sound=None):
         return False
 
 
+def make_api_request_with_retry(api_key, prompt_text, max_retries=3):
+    """Make API request with retry logic for handling rate limits and server errors."""
+
+    # Configure retry strategy
+    retry_strategy = Retry(
+        total=max_retries,
+        status_forcelist=[429, 500, 502, 503, 504, 529],  # Retry on these HTTP status codes
+        backoff_factor=1,  # Wait 1, 2, 4, 8... seconds between retries
+        allowed_methods=["POST"]  # Only retry POST requests
+    )
+
+    # Create session with retry adapter
+    session = requests.Session()
+    adapter = HTTPAdapter(max_retries=retry_strategy)
+    session.mount("https://", adapter)
+
+    data = {
+        'model': 'claude-3-5-sonnet-20241022',
+        'max_tokens': 1000,
+        'temperature': 0.7,
+        'messages': [{'role': 'user', 'content': prompt_text}]
+    }
+
+    headers = {
+        'x-api-key': api_key,
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json'
+    }
+
+    for attempt in range(max_retries + 1):
+        try:
+            response = session.post(
+                'https://api.anthropic.com/v1/messages',
+                json=data,
+                headers=headers,
+                timeout=30  # 30 second timeout
+            )
+            response.raise_for_status()  # Raise exception for bad status codes
+            return response.json()
+
+        except requests.exceptions.HTTPError as e:
+            if response.status_code == 529:
+                # Service overloaded - use exponential backoff
+                if attempt < max_retries:
+                    wait_time = (2 ** attempt) * 2  # 2, 4, 8 seconds
+                    print(f"Service overloaded (HTTP 529). Retrying in {wait_time} seconds...", file=sys.stderr)
+                    time.sleep(wait_time)
+                    continue
+            elif response.status_code == 429:
+                # Rate limited - check for Retry-After header
+                retry_after = response.headers.get('retry-after')
+                if retry_after and attempt < max_retries:
+                    wait_time = int(retry_after) if retry_after.isdigit() else 60
+                    print(f"Rate limited. Waiting {wait_time} seconds...", file=sys.stderr)
+                    time.sleep(wait_time)
+                    continue
+            raise e
+        except requests.exceptions.RequestException as e:
+            if attempt < max_retries:
+                wait_time = (2 ** attempt)
+                print(f"Request failed: {e}. Retrying in {wait_time} seconds...", file=sys.stderr)
+                time.sleep(wait_time)
+                continue
+            raise e
+
+    raise Exception(f"Failed after {max_retries + 1} attempts")
+
+
+
 prompt = '''
 You are an expert email assistant for Kasper, a professor at Aarhus University. 
 Your task is to draft concise, context-aware email responses based on the provided 
@@ -195,163 +264,70 @@ DOMAIN-SPECIFIC NOTES
 - **International academic (.edu, .fr, etc.)**: Professional but friendly, acknowledge delays if applicable
 '''
 
-_, json_file = sys.argv
-with open(json_file, 'r', encoding='utf-8') as f:
-    input_data = json.load(f)
 
-def make_api_request_with_retry(api_key, prompt_text, max_retries=3):
-    """Make API request with retry logic for handling rate limits and server errors."""
+def handle_email():
 
-    # Configure retry strategy
-    retry_strategy = Retry(
-        total=max_retries,
-        status_forcelist=[429, 500, 502, 503, 504, 529],  # Retry on these HTTP status codes
-        backoff_factor=1,  # Wait 1, 2, 4, 8... seconds between retries
-        allowed_methods=["POST"]  # Only retry POST requests
-    )
+    json_file = sys.argv[1]
 
-    # Create session with retry adapter
-    session = requests.Session()
-    adapter = HTTPAdapter(max_retries=retry_strategy)
-    session.mount("https://", adapter)
+    with open(json_file, 'r', encoding='utf-8') as f:
+        input_data = json.load(f)
 
-    data = {
-        'model': 'claude-3-5-sonnet-20241022',
-        'max_tokens': 1000,
-        'temperature': 0.7,
-        'messages': [{'role': 'user', 'content': prompt_text}]
-    }
+    try:
+        api_key = input_data['apiKey']
+        prompt_text = prompt.format(**input_data)
 
-    headers = {
-        'x-api-key': api_key,
-        'anthropic-version': '2023-06-01',
-        'content-type': 'application/json'
-    }
+        # Make API request with retry logic
+        result = make_api_request_with_retry(api_key, prompt_text)
+        claude_response = result['content'][0]['text']
 
-    for attempt in range(max_retries + 1):
-        try:
-            response = session.post(
-                'https://api.anthropic.com/v1/messages',
-                json=data,
-                headers=headers,
-                timeout=30  # 30 second timeout
-            )
-            response.raise_for_status()  # Raise exception for bad status codes
-            return response.json()
-
-        except requests.exceptions.HTTPError as e:
-            if response.status_code == 529:
-                # Service overloaded - use exponential backoff
-                if attempt < max_retries:
-                    wait_time = (2 ** attempt) * 2  # 2, 4, 8 seconds
-                    print(f"Service overloaded (HTTP 529). Retrying in {wait_time} seconds...", file=sys.stderr)
-                    time.sleep(wait_time)
-                    continue
-            elif response.status_code == 429:
-                # Rate limited - check for Retry-After header
-                retry_after = response.headers.get('retry-after')
-                if retry_after and attempt < max_retries:
-                    wait_time = int(retry_after) if retry_after.isdigit() else 60
-                    print(f"Rate limited. Waiting {wait_time} seconds...", file=sys.stderr)
-                    time.sleep(wait_time)
-                    continue
-            raise e
-        except requests.exceptions.RequestException as e:
-            if attempt < max_retries:
-                wait_time = (2 ** attempt)
-                print(f"Request failed: {e}. Retrying in {wait_time} seconds...", file=sys.stderr)
-                time.sleep(wait_time)
-                continue
-            raise e
-
-    raise Exception(f"Failed after {max_retries + 1} attempts")
-
-try:
-    api_key = input_data['apiKey']
-    prompt_text = prompt.format(**input_data)
-
-    # Make API request with retry logic
-    result = make_api_request_with_retry(api_key, prompt_text)
-    claude_response = result['content'][0]['text']
-
-    response_data = json.loads(claude_response)
+        response_data = json.loads(claude_response)
 
 
-    from notion_page import NotionPageCreator
-    creator = NotionPageCreator('NOTION_API_KEY') ############ GET THE KEY FROM KEYCHAIN IN APPLESCRIPT AND PASS IT TO THIS SCRIPT
-    for i, task in enumerate(response_data.get('tasks', [])):
-        title = task['title']
-        due_date = task.get('due_date', '')
-        note = task.get('note', '')
-        content = f"Due date: {due_date}\n\n{note}" if due_date or note else ''
-        # Here you would add the code to create a Notion page using your NotionPageCreator
-        # For example:
-        creator.create_page('25ffd1e7c2e1800d9be9f8b38365b1c6', title, content)
-        safe_notify(f"Task {i+1}: " + title, content, sound="Ping")
-   
-    # Convert to JSON
-    json_string = json.dumps(response_data, ensure_ascii=False)
+        from .notion_page import NotionPageCreator
+        creator = NotionPageCreator('NOTION_API_KEY') ############ GET THE KEY FROM KEYCHAIN IN APPLESCRIPT AND PASS IT TO THIS SCRIPT
+        for i, task in enumerate(response_data.get('tasks', [])):
+            title = task['title']
+            due_date = task.get('due_date', '')
+            note = task.get('note', '')
+            content = f"Due date: {due_date}\n\n{note}" if due_date or note else ''
+            # Here you would add the code to create a Notion page using your NotionPageCreator
+            # For example:
+            creator.create_page('25ffd1e7c2e1800d9be9f8b38365b1c6', title, content)
+            safe_notify(f"Task {i+1}: " + title, content, sound="Ping")
     
-    # Base64 encode
-    encoded = base64.b64encode(json_string.encode('utf-8')).decode('ascii')
-    
-    # Return only the base64 string
-    print(encoded)
-
-    # assert 0, json_text
-
-    #print(json_text)
-
-    # # Output in a format AppleScript can parse
-    # print('EMAIL_DRAFT_START')
-    # print(response_data.get('email_draft', ''))
-    # print('EMAIL_DRAFT_END')
-
-except requests.exceptions.HTTPError as e:
-    if e.response.status_code == 401:
-        print(f'ERROR: Invalid API key', file=sys.stderr)
-    elif e.response.status_code == 429:
-        print(f'ERROR: Rate limit exceeded. Please try again later.', file=sys.stderr)
-    elif e.response.status_code == 529:
-        print(f'ERROR: Service temporarily unavailable. Please try again later.', file=sys.stderr)
-    else:
-        print(f'ERROR: HTTP {e.response.status_code}: {e}', file=sys.stderr)
-    sys.exit(1)
-except requests.exceptions.ConnectionError:
-    print('ERROR: Unable to connect to Anthropic API. Check your internet connection.', file=sys.stderr)
-    sys.exit(1)
-except requests.exceptions.Timeout:
-    print('ERROR: Request timed out. Please try again.', file=sys.stderr)
-    sys.exit(1)
-except json.JSONDecodeError as e:
-    print(f'ERROR: Invalid JSON in response: {e}', file=sys.stderr)
-    sys.exit(1)
-except KeyError as e:
-    print(f'ERROR: Missing required field in input: {e}', file=sys.stderr)
-    sys.exit(1)
-except Exception as e:
-    raise e
-    # print(f'ERROR: {e}', file=sys.stderr)
-    # sys.exit(1)
-
-# try:
-#     response = urllib.request.urlopen(req)
-#     result = json.loads(response.read())
-#     claude_response = result['content'][0]['text']
-    
-#     # Parse the JSON response from Claude
-#     response_data = json.loads(claude_response)
-    
-#     # Output in a format AppleScript can parse
-#     print('EMAIL_DRAFT_START')
-#     print(response_data.get('email_draft', ''))
-#     print('EMAIL_DRAFT_END')
-    
-#     # if 'suggested_meetings' in response_data and response_data['suggested_meetings']:
-#     #     print('MEETINGS_START')
-#     #     for meeting in response_data['suggested_meetings']:
-#     #         print(f"{meeting['date']}|{meeting['start_time']}|{meeting['end_time']}|{meeting['title']}")
-#     #     print('MEETINGS_END')
+        # Convert to JSON
+        json_string = json.dumps(response_data, ensure_ascii=False)
         
-# except Exception as e:
-#     print(f'ERROR: {e}')
+        # Base64 encode
+        encoded = base64.b64encode(json_string.encode('utf-8')).decode('ascii')
+        
+        # Return only the base64 string to applescript via stdout
+        print(encoded)
+
+
+    except requests.exceptions.HTTPError as e:
+        if e.response.status_code == 401:
+            print(f'ERROR: Invalid API key', file=sys.stderr)
+        elif e.response.status_code == 429:
+            print(f'ERROR: Rate limit exceeded. Please try again later.', file=sys.stderr)
+        elif e.response.status_code == 529:
+            print(f'ERROR: Service temporarily unavailable. Please try again later.', file=sys.stderr)
+        else:
+            print(f'ERROR: HTTP {e.response.status_code}: {e}', file=sys.stderr)
+        sys.exit(1)
+    except requests.exceptions.ConnectionError:
+        print('ERROR: Unable to connect to Anthropic API. Check your internet connection.', file=sys.stderr)
+        sys.exit(1)
+    except requests.exceptions.Timeout:
+        print('ERROR: Request timed out. Please try again.', file=sys.stderr)
+        sys.exit(1)
+    except json.JSONDecodeError as e:
+        print(f'ERROR: Invalid JSON in response: {e}', file=sys.stderr)
+        sys.exit(1)
+    except KeyError as e:
+        print(f'ERROR: Missing required field in input: {e}', file=sys.stderr)
+        sys.exit(1)
+    except Exception as e:
+        raise e
+        # print(f'ERROR: {e}', file=sys.stderr)
+        # sys.exit(1)
